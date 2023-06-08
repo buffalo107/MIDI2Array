@@ -12,6 +12,7 @@
 #include <string>
 #include <filesystem>
 #include <iostream>
+#include <algorithm>
 #include "MidiFile.h"
 
 using namespace smf;
@@ -381,14 +382,34 @@ void MIDIconvert(string midifilename,string* txt) {
 	
 	// マスタートラックのテンポを元に、全MIDIイベントの時間(秒)を計算
 	midi_file.doTimeAnalysis();
+
+	//曲の最初と最後の時間を取得
+	vector <double> starttime{};
+	vector <double> endtime{};
+
+	for (int track = 0; track < midi_file.getTrackCount(); track++) {
+		
+		for (int event = 0; event < midi_file[track].size(); event++) {
+			if (midi_file[track][event].isNoteOn()) {
+				starttime.push_back(midi_file[track][event].seconds);
+				break;
+			}
+		}
+
+		for (int event = midi_file[track].size()-1; event > 0; event--) {
+			if (midi_file[track][event].isNoteOff()) {
+				endtime.push_back(midi_file[track][event].seconds);
+				break;
+			}
+		}
+	}
+
+	double timemin = *min_element(starttime.begin(), starttime.end());
+	double timemax = *max_element(endtime.begin(), endtime.end());
+	
 	
 	// 全トラックのMIDIイベントから音階、強弱、秒数を取得
 	for (int track = 0; track < midi_file.getTrackCount(); track++) {
-		
-		//配列のフォーマットで出力する
-		*txt += "int track";
-		*txt += to_string(track);
-		*txt += "[] = {\r\n	";
 		
 		//要素数カウント用変数
 		int cnt = 0;
@@ -398,6 +419,28 @@ void MIDIconvert(string midifilename,string* txt) {
 
 			//ノートオンを検出したら以下の処理を実行
 			if (midi_file[track][event].isNoteOn()) {
+
+				if (cnt == 0) {
+					//配列のフォーマットで出力する
+					*txt += "int track";
+					*txt += to_string(track);
+					*txt += "[] = {\r\n	";
+					
+					//曲の開始時間とトラックの開始時間の差を求める
+					double trackstarttime = (midi_file[track][event].seconds-timemin)* 1000.0000000000;
+
+					//もし曲の開始時間とトラックの開始時間に差があったら無音区間を作る
+					if (trackstarttime != 0) {
+						*txt += "128";	//MIDIの音階は0～127で表されるので、出力する音階がない場合に128を割り当てた
+						*txt += ",";
+						*txt += "0";	//音の強さは0
+						*txt += ",";
+						*txt += to_string(trackstarttime).erase(to_string(trackstarttime).find('.'));
+						*txt += ", ";
+
+						cnt++;
+					}
+				}
 
 				//ノートオンした音の音階と強さを取得、秒数を格納する変数
 				int KeyNumber=midi_file[track][event].getKeyNumber();
@@ -465,10 +508,32 @@ void MIDIconvert(string midifilename,string* txt) {
 					if (cnt % 10 == 0)*txt += "\r\n	";
 				}
 			}
+			
+			//ループの最後にcntが0でなかったら処理を実行
+			if (event == midi_file[track].size() - 1 && cnt > 0) {
+
+				//最後のノートオフから曲の終了まで無音区間を作る
+				double trackendtime = 0;
+				for (int i = event; i > 0; i--) {
+					if (midi_file[track][i].isNoteOff()) {
+						trackendtime = (timemax - midi_file[track][i].seconds) * 1000.0000000000;
+						break;
+					}
+				}
+				*txt += "128";	//MIDIの音階は0～127で表されるので、出力する音階がない場合に128を割り当てた
+				*txt += ",";
+				*txt += "0";	//音の強さは0
+				*txt += ",";
+				*txt += to_string(trackendtime).erase(to_string(trackendtime).find('.'));
+				*txt += ", ";
+
+				//配列の終端
+				*txt += "\r\n};\r\n\r\n";
+			}
+			
 		}
 
-	//一つの配列の終端
-	*txt += "\r\n};\r\n\r\n";
+		
 
 	}
 }
