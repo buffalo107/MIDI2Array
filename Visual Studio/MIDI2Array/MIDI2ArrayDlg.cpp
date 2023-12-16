@@ -174,7 +174,7 @@ HCURSOR CMIDI2ArrayDlg::OnQueryDragIcon()
 int filenum = 0;									//合計ファイル数
 vector<CString> filename{};							//ファイル名格納用配列
 CString selectfolder = (CString)("0");				//出力先フォルダ記憶用変数
-void MIDIconvert(string midifilename, string* txt);	//MIDIデータの変換用関数を宣言
+void MIDIconvert(string midifilename, string* txt,bool VolDataInclude);	//MIDIデータの変換用関数を宣言
 
 //ファイルのドラッグ＆ドロップ
 void CMIDI2ArrayDlg::OnDropFiles(HDROP hDropInfo)
@@ -302,7 +302,8 @@ void CMIDI2ArrayDlg::OnBnClickedFileclear()
 	
 	//ファイルが選択されていた場合、
 	if ((int)filename.size() > 0) {										
-		for (int i = 0;i < (int)filename.size();i++)filename.pop_back();//ファイル名格納用変数の中身を空にし、
+		//for (int i = 0;i < (int)filename.size();i++)filename.pop_back();//ファイル名格納用変数の中身を空にする
+		filename.clear();//ファイル名格納用変数を初期化
 		m_List.ResetContent();	//リストを初期化、
 		filenum = 0;			//ファイル数も0にする
 	}
@@ -328,7 +329,8 @@ void CMIDI2ArrayDlg::OnBnClickedFoldersel()
 void CMIDI2ArrayDlg::OnBnClickedConvert()
 {
 	//データが選択されていなかったらエラーを表示
-	if ((int)filename.size() == 0)MessageBox(TEXT("データを選択してください"), TEXT("エラー"), MB_OK);
+	if((int)filename.size() == 0 && selectfolder == (CString)("0"))MessageBox(TEXT("MIDIファイルと出力フォルダを選択してください"), TEXT("エラー"), MB_OK);
+	else if ((int)filename.size() == 0)MessageBox(TEXT("MIDIファイルを選択してください"), TEXT("エラー"), MB_OK);
 	//データが選択されていてもフォルダが選択されていなかったらエラーを表示
 	else if (selectfolder == (CString)("0"))MessageBox(TEXT("出力フォルダを選択してください"), TEXT("エラー"), MB_OK);
 	//データもフォルダも選択されていたら変換を行う
@@ -346,8 +348,12 @@ void CMIDI2ArrayDlg::OnBnClickedConvert()
 			//MIDIデータ変換用関数とやり取りするための配列を用意
 			string MIDItxt;
 
-			//MIDIデータを変換。引数は変換元のファイル名と、変換したデータを格納する配列のポインタ
-			MIDIconvert(CStringA(filename[i]).GetBuffer(), &MIDItxt);
+			//音量データを含めるかどうかのチェックボックスの値を取得
+			CButton* VolDataCheckBox = (CButton*)GetDlgItem(IDC_VOLUMEDATA);
+			bool VolDataInclude = VolDataCheckBox->GetCheck();
+
+			//MIDIデータを変換。引数は変換元のファイル名と、変換したデータを格納する配列のポインタ、音量データを含めるかどうかの判定
+			MIDIconvert(CStringA(filename[i]).GetBuffer(), &MIDItxt, VolDataInclude);
 
 			//ファイルの出力
 			ofstream writing_file;
@@ -373,7 +379,7 @@ void CMIDI2ArrayDlg::OnBnClickedConvert()
 }
 
 //MIDIファイル解析・変換用関数
-void MIDIconvert(string midifilename,string* txt) {
+void MIDIconvert(string midifilename,string* txt,bool VolDataInclude) {
 	// MIDIファイルを解析
 	MidiFile midi_file;
 	
@@ -407,7 +413,6 @@ void MIDIconvert(string midifilename,string* txt) {
 	double timemin = *min_element(starttime.begin(), starttime.end());
 	double timemax = *max_element(endtime.begin(), endtime.end());
 	
-	
 	// 全トラックのMIDIイベントから音階、強弱、秒数を取得
 	for (int track = 0; track < midi_file.getTrackCount(); track++) {
 		
@@ -433,8 +438,10 @@ void MIDIconvert(string midifilename,string* txt) {
 					if (trackstarttime != 0) {
 						*txt += "128";	//MIDIの音階は0～127で表されるので、出力する音階がない場合に128を割り当てた
 						*txt += ",";
-						*txt += "0";	//音の強さは0
-						*txt += ",";
+						if (VolDataInclude) {//音量データの出力が選択されていたら実行
+							*txt += "0";	//音の強さは0
+							*txt += ",";
+						}
 						*txt += to_string(trackstarttime).erase(to_string(trackstarttime).find('.'));
 						*txt += ", ";
 
@@ -459,8 +466,10 @@ void MIDIconvert(string midifilename,string* txt) {
 				//配列に音階、強弱、秒数を出力
 				*txt += to_string(KeyNumber);
 				*txt += ",";
-				*txt += to_string(Velocity);
-				*txt += ",";
+				if (VolDataInclude) {//音量データの出力が選択されていたら実行
+					*txt += to_string(Velocity);
+					*txt += ",";
+				}
 				*txt += to_string(NoteOnLength).erase(to_string(NoteOnLength).find('.'));//秒数は小数点以下を切り捨てて出力
 				*txt += ", ";
 
@@ -498,8 +507,10 @@ void MIDIconvert(string midifilename,string* txt) {
 					//配列に音階、強弱、秒数を出力
 					*txt += "128";	//MIDIの音階は0～127で表されるので、出力する音階がない場合に128を割り当てた
 					*txt += ",";
-					*txt += "0";	//音の強さは0
-					*txt += ",";
+					if (VolDataInclude) {//音量データの出力が選択されていたら実行
+						*txt += "0";	//音の強さは0
+						*txt += ",";
+					}
 					*txt += to_string(NoteOnLength).erase(to_string(NoteOnLength).find('.'));
 					*txt += ", ";
 					
@@ -522,8 +533,10 @@ void MIDIconvert(string midifilename,string* txt) {
 				}
 				*txt += "128";	//MIDIの音階は0～127で表されるので、出力する音階がない場合に128を割り当てた
 				*txt += ",";
-				*txt += "0";	//音の強さは0
-				*txt += ",";
+				if (VolDataInclude) {//音量データの出力が選択されていたら実行
+					*txt += "0";	//音の強さは0
+					*txt += ",";
+				}
 				*txt += to_string(trackendtime).erase(to_string(trackendtime).find('.'));
 				*txt += ", ";
 
